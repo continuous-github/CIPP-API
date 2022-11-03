@@ -5,17 +5,31 @@ param($Request, $TriggerMetadata)
 
 $APIName = $TriggerMetadata.FunctionName
 Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME  -message "Accessed this API" -Sev "Debug"
+$Table = Get-CippTable -tablename 'templates'
 
-
-# Write to the Azure Functions log stream.
-Write-Host "PowerShell HTTP trigger function processed a request."
-Write-Host $Request.query.id
 $Templates = Get-ChildItem "Config\*.TransportRuleTemplate.json" | ForEach-Object {
-    $data = Get-Content $_ | ConvertFrom-Json 
-    $data | Add-Member -NotePropertyName "GUID" -NotePropertyValue (($_.name).split('.') | Select-Object -First 1)
-    $data
+    
+    $Entity = @{
+        JSON         = "$(Get-Content $_)"
+        RowKey       = "$($_.name)"
+        PartitionKey = "TransportTemplate"
+        GUID         = "$($_.name)"
+    }
+    Add-AzDataTableEntity @Table -Entity $Entity -Force
+
 }
-if ($Request.query.ID) { $Templates = $Templates | Where-Object -Property guid -EQ $Request.query.id }
+
+#List new policies
+$Table = Get-CippTable -tablename 'templates'
+$Filter = "PartitionKey eq 'TransportTemplate'" 
+$Templates = (Get-AzDataTableRow @Table -Filter $Filter) | ForEach-Object {
+    $GUID = $_.RowKey
+    $data = $_.JSON | ConvertFrom-Json 
+    $data | Add-Member -NotePropertyName "GUID" -NotePropertyValue $GUID
+    $data 
+}
+
+if ($Request.query.ID) { $Templates = $Templates | Where-Object -Property RowKey -EQ $Request.query.id }
 
 
 # Associate values to output bindings by calling 'Push-OutputBinding'.

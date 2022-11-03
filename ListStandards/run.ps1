@@ -2,39 +2,43 @@ using namespace System.Net
 
 # Input bindings are passed in via param block.
 param($Request, $TriggerMetadata)
-
+Set-Location (Get-Item $PSScriptRoot).Parent.FullName
 $APIName = $TriggerMetadata.FunctionName
-Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME  -message "Accessed this API" -Sev "Debug"
+Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+$Table = Get-CippTable -tablename 'standards'
 
+$Filter = "PartitionKey eq 'standards'" 
 
-# Write to the Azure Functions log stream.
-Write-Host "PowerShell HTTP trigger function processed a request."
-if ($Request.query.TenantFilter) { 
-    $tenants = Get-ChildItem "Cache_Standards\$($Request.query.TenantFilter).standards.json" 
-}
-else {
-    $Tenants = Get-ChildItem "Cache_Standards\*.standards.json"
-}
-
-$CurrentStandards = foreach ($tenant in $tenants) {
-    $StandardsFile = Get-Content "$($tenant)" | ConvertFrom-Json
-    if ($null -eq $StandardsFile.Tenant) { continue }
-    [PSCustomObject]@{
-        displayName = $StandardsFile.tenant
-        appliedBy   = $StandardsFile.addedby
-        appliedAt   = ($tenant).LastWriteTime.toString('s')
-        standards   = $StandardsFile.standards
+try { 
+    if ($Request.query.TenantFilter) { 
+        $tenants = (Get-AzDataTableRow @Table -Filter $Filter).JSON | ConvertFrom-Json -ErrorAction Stop | Where-Object Tenant -EQ $Request.query.tenantFilter
+    }
+    else {
+        $Tenants = (Get-AzDataTableRow @Table -Filter $Filter).JSON | ConvertFrom-Json -ErrorAction Stop
     }
 }
+catch {}
 
+$CurrentStandards = foreach ($tenant in $tenants) {
+    [PSCustomObject]@{
+        displayName     = $tenant.tenant
+        appliedBy       = $tenant.addedBy
+        appliedAt       = $tenant.appliedAt
+        standards       = $tenant.Standards
+        StandardsExport = ($tenant.Standards.psobject.properties.name) -join ', '
+    }
+}
 if (!$CurrentStandards) {
     $CurrentStandards = [PSCustomObject]@{
-        displayName = "No Standards applied"
+        displayName = 'No Standards applied'
         appliedBy   = $null
         appliedAt   = $null
         standards   = @{none = $null }
     }
 }
+
+
+
 # Associate values to output bindings by calling 'Push-OutputBinding'.
 Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = [HttpStatusCode]::OK

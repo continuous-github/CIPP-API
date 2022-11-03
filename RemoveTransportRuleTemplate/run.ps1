@@ -8,13 +8,16 @@ Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME  -
 
 $ID = $request.query.id
 try {
-    Remove-Item "Config\$($ID).TransportRuleTemplate.json" -Force
+    $Table = Get-CippTable -tablename 'templates'
+    $Filter = "PartitionKey eq 'TransportTemplate' and RowKey eq '$id'" 
+    $ClearRow = Get-AzDataTableRow @Table -Filter $Filter
+    Remove-AzDataTableRow @Table -Entity $clearRow
     Write-LogMessage -user $request.headers.'x-ms-client-principal'  -API $APINAME  -message "Removed Transport Rule Template with ID $ID." -Sev "Info"
     $body = [pscustomobject]@{"Results" = "Successfully removed Transport Rule Template" }
 }
 catch {
     Write-LogMessage -user $request.headers.'x-ms-client-principal'  -API $APINAME  -message "Failed to remove Transport Rule template $ID. $($_.Exception.Message)" -Sev "Error"
-    $body = [pscustomobject]@{"Results" = "Failed to remove template" }
+    $body = [pscustomobject]@{"Results" = "Failed to remove template: $($_.Exception.Message)" }
 }
 
 
